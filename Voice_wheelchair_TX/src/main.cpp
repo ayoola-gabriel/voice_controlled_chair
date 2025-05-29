@@ -3,8 +3,16 @@
 #include <radio.h>
 
 AltSoftSerial voiceSerial;
+
+// pin definitions
 #define batteryPin A7
 #define LED 4
+
+#define stopButton 2
+#define forwardButton 5
+#define backwardButton 3
+#define leftButton 7
+#define rightButton 6
 
 #define DEBUG 1
 
@@ -15,6 +23,7 @@ AltSoftSerial voiceSerial;
 #endif
 
 uint32_t lastTime = 0;
+bool buttonCommand = false;
 
 void blinkLED(int times){
   for(int i=0; i<times; i++){
@@ -42,10 +51,23 @@ void initialize()
   // initialize Voice Module
   voiceSerial.begin(9600);
 
+  // Initialize pins
   pinMode(LED, OUTPUT);
   pinMode(batteryPin, INPUT);
+  pinMode(stopButton, INPUT_PULLUP);
+  pinMode(forwardButton, INPUT_PULLUP);
+  pinMode(backwardButton, INPUT_PULLUP);  
+  pinMode(leftButton, INPUT_PULLUP);
+  pinMode(rightButton, INPUT_PULLUP);
+  DEBUG_PRINTLN("Pins Initialized");
+  delay(100);
+  
+  // blink LED to indicate initialization
   blinkLED(3);
   delay(100);
+
+  PCICR |= (1 << PCIE2); // Enable pin change interrupt for digital pins 2-7
+  PCMSK2 |= (1 << PCINT18) | (1 << PCINT19) | (1 << PCINT23) | (1 << PCINT21) | (1 << PCINT22); // Enable pin change interrupt for stop, forward, backward, left, right buttons
   DEBUG_PRINTLN("Initialization Complete");
 
 }
@@ -56,7 +78,7 @@ void setup()
 {
   // put your setup code here, to run once:
   initialize();
-  delay(100);
+  delay(500);
   lastTime = millis();
 }
 
@@ -82,7 +104,8 @@ void loop()
     // DEBUG_PRINTLN(battLevel);
 
 
-    if(millis() - lastTime > 5000 && batteryValue > 3.3){
+// Check battery level and blink LED if needed
+    if(millis() - lastTime > 10000 && battLevel > 3.3){
       lastTime = millis();
       digitalWrite(LED, HIGH);
       delay(100);
@@ -90,26 +113,46 @@ void loop()
     }
 } 
 
-/*
- {{0x5A, 0x2D}, 2}, //Stop
-  {{0x5A, 0x2E}, 2}, //Forward
-  {{0x5A, 0x2F}, 2}, //Backward
-  {{0x5A, 0x30}, 2}, //KeepForward
-  {{0x5A, 0x31}, 2}, //KeepBackward
-  {{0x5A, 0x32}, 2}, //KeepLeft
-  {{0x5A, 0x33}, 2}, //KeepRight
-  {{0x5A, 0x34}, 2}, //Left
-  {{0x5A, 0x35}, 2}, //Right
-  {{0x5A, 0x36}, 2}, //UTurn
-  {{0x5A, 0x37}, 2}, //RotateChair
-  {{0x5A, 0x38}, 2}, //SpeedUp
-  {{0x5A, 0x39}, 2}, //SlowDown
-  {{0x5A, 0x3A}, 2}, //StartCalibratio
-  {{0x5A, 0x3B}, 2}, //EndCalibration
-  {{0x5A, 0x3C}, 2}, //SelectLeft
-  {{0x5A, 0x3D}, 2}, //SelectRight
-*/
+// Interrupt Service Routine for pin change interrupts
+ISR(PCINT2_vect) {
+  // Check if the stop button is pressed
+  if (digitalRead(stopButton) == LOW) {
+    while (digitalRead(stopButton) == LOW); // wait for button release
+    radioSend("Stop");
+    buttonCommand = true;
+  }
 
+  // Check if the forward button is pressed
+  else if (digitalRead(forwardButton) == LOW) {
+    while (digitalRead(forwardButton) == LOW); // wait for button release
+    radioSend("KeepForward");
+    buttonCommand = true;
+  }
+
+  // Check if the backward button is pressed
+  else if (digitalRead(backwardButton) == LOW) {
+    while (digitalRead(backwardButton) == LOW); // wait for button release
+    radioSend("KeepBackward");
+    buttonCommand = true;
+  }
+
+  // Check if the left button is pressed
+  else if (digitalRead(leftButton) == LOW) {
+    while (digitalRead(leftButton) == LOW); // wait for button release
+    buttonCommand = true;
+    radioSend("Left");
+  }
+
+  // Check if the right button is pressed
+  else if (digitalRead(rightButton) == LOW) {
+    while (digitalRead(rightButton) == LOW); // wait for button release
+    buttonCommand = true;
+    radioSend("Right");
+} else {
+  buttonCommand = false; // No button pressed
+  return;
+}
+}
 
 char* mapVoiceValue(int16_t value){
   String commandValue = String();

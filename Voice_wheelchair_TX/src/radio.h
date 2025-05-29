@@ -26,7 +26,7 @@ bool beginRadio()
 
   // Serial.println(F("radio hardware is powered on"));
   
-  radio.setPALevel(RF24_PA_HIGH);
+  radio.setPALevel(RF24_PA_MAX);  // Set power amplifier level to maximum
   radio.openWritingPipe(address);
   radio.stopListening();
   return true;
