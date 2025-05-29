@@ -52,12 +52,16 @@ bool calibrateRightMotor = false;
 uint16_t leftMotorCalibrationValue = DEFAULT_SPEED;
 uint16_t rightMotorCalibrationValue = DEFAULT_SPEED;
 uint8_t calibratedflag = 0;
+uint32_t readDistanceTimeout = 0;
 
 uint8_t directionBuffer = 0;
+bool inMotion = false;
 
 // #define LED 2
 #define LED 6
 #define stopButton 2
+#define sensorPin A5
+#define buzzPin A4
 
 #include <EEPROM.h>
 
@@ -69,6 +73,9 @@ const int calibrationStateAddress = 3;
 const int calibrationFactorAddress = 6;
 const int lockCounterAddress = 4;
 const int doNotLockAddress = 5;
+
+long duration;
+float distance;
 
 // Default values
 uint16_t speedValue = 0;
@@ -94,6 +101,7 @@ void leftLogic();
 void clearEEPROM();
 void blinkLED(int times);
 void unlockAndPasswordMode();
+float readDistance();
 
 void stopISR(){
   stopLogic();
@@ -110,6 +118,8 @@ void setup() {
   Serial.println("Starting...");
 
   pinMode(stopButton, INPUT_PULLUP);
+  pinMode(buzzPin, OUTPUT);
+  digitalWrite(buzzPin, LOW);
   pinMode(LED, OUTPUT);
 
   //clearEEPROM();
@@ -156,12 +166,15 @@ void setup() {
   Serial.println("Setup complete");
 
   attachInterrupt(digitalPinToInterrupt(stopButton),stopISR,FALLING);
+  readDistanceTimeout = millis();
 
 }
 
 // Main loop
 void loop() {
+  
   if (radio.available()) {
+    blinkLED(1);
     char text[32] = "";
     radio.read(&text, sizeof(text));
     // String command = String(text);
@@ -169,7 +182,7 @@ void loop() {
     Serial.println(text);
     processCommand(text);
     commandTimeout = millis();
-    blinkLED(1);
+    
   }
  
   switch(directionBuffer) {
@@ -189,6 +202,7 @@ void loop() {
 
   if(directionBuffer>0 && millis() - commandTimeout > motorTimeout){
     stopLogic();
+    inMotion = false;
     directionBuffer = 0;
   }
 
@@ -197,15 +211,40 @@ void loop() {
     lockCounter++;
     saveValueToEEPROM(lockCounterAddress, lockCounter);
   }
-}
+
+  if(inMotion){
+  if(millis() - readDistanceTimeout > 500){
+    readDistanceTimeout = millis();
+    float dist = readDistance();
+  
+  if(dist < 100 && directionBuffer != 3 && directionBuffer != 4) {
+    stopLogic();
+    digitalWrite(buzzPin, HIGH);
+    delay(2000);
+    digitalWrite(buzzPin, LOW);
+    Serial.println("Obstacle detected, stopping chair");
+    directionBuffer = 0;
+    inMotion = false;
+    // // delay(1000);
+    // while(readDistance()<100){
+    //   delay(100);
+    // }
+    // Serial.println("Obstacle cleared, resuming operation");
+  }
+  }
+  // delay(500);
+  }
+  }
 
  
 // Process the received command
 void processCommand(char* command) {
+  inMotion = true;
   if(!strcmp(stopCommand, command)){
     Serial.println("Stopping chair");
     directionBuffer = 0;
     stopLogic();
+    inMotion = false;
   } else if(!strcmp(forwardCommand, command)){
     stopLogic();
     delay(100);
@@ -526,6 +565,35 @@ void unlockAndPasswordMode() {
       blinkLED(3);
     }
   }
+}
+
+
+float readDistance(){
+  pinMode(sensorPin, OUTPUT);
+  digitalWrite(sensorPin, LOW);
+  delayMicroseconds(2);
+
+  // Send 10us pulse to TRIG
+  digitalWrite(sensorPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(sensorPin, LOW);
+
+  // Switch pin to input to read ECHO
+  pinMode(sensorPin, INPUT);
+  duration = pulseIn(sensorPin, HIGH);
+
+  // Calculate distance in cm
+  distance = duration * 0.0343 / 2;
+
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  if(distance < 2 || distance > 400) {
+    Serial.println("Distance out of range");
+    distance = 1000; // Set to max range if out of bounds
+  }
+  return distance;
 }
 
 
